@@ -1,0 +1,139 @@
+'Clock Generator IC Si5351A library for AB-FT232HLib by RGBA_CRT 2017
+
+Const _MSNA_P3M	=26
+Const _MSNA_P3L	=27
+Const _MSNA_P1H	=28
+Const _MSNA_P1M	=29
+Const _MSNA_P1L	=30
+Const _MSNA_P32H=31
+Const _MSNA_P2M	=32
+Const _MSNA_P2L	=33
+
+Const _MS0_P3M 	=42
+Const _MS0_P3L 	=43
+Const _MS0_P1H 	=44
+Const _MS0_P1M 	=45
+Const _MS0_P1L 	=46
+Const _MS0_P32H	=47
+Const _MS0_P2M 	=48
+Const _MS0_P2L 	=49
+Const SI5351_CLK0_CTRL		=16
+Const SI5351_CLK_INTEGER_MODE	=64
+Const SI5351_CLK0_PARAMETERS=42
+Const SI5351_OUTPUT_CLK_DIVBY4=12
+
+Type Si5351A_CONFIG
+	crystal AS DWord
+	vcoA	As DWord
+	vcoB	As DWord
+	vcoC	As DWord
+	divA	As DWord
+	divB	As DWord
+	divC	As DWord
+	div4	As DWord
+	R_DIV	As DWord
+End Type
+
+CONST Si5351A_CALC_ACCURACY = 1048575/10
+Class FT232H_Si5351A
+Private
+	slaveAdr AS Byte
+	ft AS *FT232H
+
+Public
+	Sub FT232H_Si5351A(ftc AS *FT232H)(_slaveAdr As Byte)
+		if _slaveAdr=0 Then
+			slaveAdr=&H60
+		Else
+			slaveAdr=_slaveAdr
+		End If
+		ft=ftc
+	End Sub
+
+	Sub SetClk0(ByRef conf AS Si5351A_CONFIG)
+		write1b(16,&H80)	'output disable clk0
+		write1b(17,&H80)	'output disable clk1
+		write1b(18,&H80)	'output disable clk2
+		write1b(SI5351_CLK0_CTRL,SI5351_CLK_INTEGER_MODE or 79)	'set integer mode 79~8mA
+
+		With conf
+			SetPLL(.vcoA, .vcoB, .vcoC)
+			SetMS0(.divA, .divB, .divC, .div4, .R_DIV)
+		End With
+
+		write1b(177,&HA0)	'PLL_A reset
+	    write1b(16,&H4F)	'CLK0 ENABLE (Multisynth0Integer mode, PLL_A source)
+	End Sub
+
+	Sub SetClk0_Easy(freq_MHz AS Double)
+		Dim conf AS Si5351A_CONFIG
+		CalcParameter(freq_MHz,conf)
+		SetClk0(conf)
+	End Sub
+
+	Sub CalcParameter(freq_MHz AS Double, ByRef conf AS Si5351A_CONFIG)
+		Dim vcoDiv AS Double
+
+		With conf
+			.crystal=25
+			.vcoA=32
+			.vcoB=0
+			.vcoC=1
+			.R_DIV=0
+
+		*CALC_VCO_DIV
+			vcoDiv = 800.0 / freq_MHz / (1<<.R_DIV)
+			if vcoDiv > 1800 Then
+				.R_DIV = .R_DIV + 1
+				if .R_DIV < 7 Then Goto *CALC_VCO_DIV
+			End If
+
+			.divA = vcoDiv AS DWord										'分母 整数部
+			if .divA < 6 Then .divA=6
+			if .divA > 1800 Then .divA=1800/2
+
+			.divB= ((vcoDiv - (.divA AS Double))*Si5351A_CALC_ACCURACY) AS DWord	'分母 小数部
+			.divC=Si5351A_CALC_ACCURACY
+
+		'(	DBM(sprintfStr("div:%d, divA:%d, divB:%d",vcoDiv,.divA,.divB))
+		End With
+	EndSub
+Private		
+
+	'write1bの第二引数はキャストエラーを抑えるためにDWordとする
+	Sub write1b(registerAdr AS Byte,data AS DWord)
+		if ft->iic->writeReg(slaveAdr,registerAdr,data AS Byte)=-1 Then OutputDebugString(ex"i2c err\r\n")
+	End Sub
+
+	Sub SetPLL(vcoA AS Long,vcoB AS Long,vcoC AS Long)
+		Dim P1 AS DWord,P2 AS DWord,P3 AS DWord
+		P1=128 * vcoA + Int( 128 * ( vcoB / vcoC ) ) - 512
+		P2=128 * vcoB - vcoC * Int( 128 * ( vcoB / vcoC ) )
+		P3=vcoC
+		write1b(_MSNA_P3M , (P3 And &H00FF00)>>8)	'26
+		write1b(_MSNA_P3L , (P3 And &H0000FF))		'27
+		write1b(_MSNA_P1H , (P1 And &H030000)>>16)	'28
+		write1b(_MSNA_P1M , (P1 And &H00FF00)>>8)	'29
+		write1b(_MSNA_P1L , (P1 And &H0000FF))		'30
+		write1b(_MSNA_P32H, ((P3 And &H0F0000)>>12)+((P2 And &H0F0000)>>16))	'31
+		write1b(_MSNA_P2M , (P2 And &H00FF00)>>8)	'32
+		write1b(_MSNA_P2L , (P2 And &H0000FF))		'33 
+	End Sub
+
+	Sub SetMS0(foutA AS Long,foutB AS Long,foutC AS Long,div4 AS DWord,R_DIV As DWord)
+		Dim P1 AS DWord,P2 AS DWord,P3 AS DWord
+		P1=128 * foutA + Int( 128 * ( foutB / foutC ) ) - 512
+		P2=128 * foutB - foutC * Int( 128 * ( foutB / foutC ) )
+		P3=foutC
+		write1b(_MS0_P3M , ( P3 And &H00FF00)>>8)		'42
+		write1b(_MS0_P3L , ( P3 And &H0000FF))			'43
+
+		write1b(_MS0_P1H , ((P1 And &H030000)>>16) or (&HC * (div4 And 1)) or ((R_DIV And &H07)<<4) )		'44 (R0Div=1 DIBby4=0)
+		write1b(_MS0_P1M , ( P1 And &H00FF00)>>8)		'45
+		write1b(_MS0_P1L , ( P1 And &H0000FF))			'46
+
+		write1b(_MS0_P32H, ((P3 And &H0F0000)>>12)+((P2 And &H0F0000)>>16))		'47
+		write1b(_MS0_P2M , ( P2 And &H00FF00)>>8)		'48
+		write1b(_MS0_P2L , ( P2 And &H0000FF))			'49                           
+	End Sub
+End Class

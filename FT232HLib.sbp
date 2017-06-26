@@ -1,0 +1,462 @@
+'FT232H library for ActiveBasic4 by RGBA_CRT 2017
+
+Const FT232HL_BUFSIZE_DEFAULT = 1200
+Const USB_BUFFER_SIZE=5504+64*3
+Const FT_USB_LATENCY=1	'1～254
+
+Class FT232H
+Private
+	buf As BytePtr
+	bufSize As DWord
+	nowBufCount As DWord
+	rsvLength As DWord
+
+Public
+	hFT As FT_HANDLE
+	spi As *FT232H_SPI
+	iic As *FT232H_IIC
+	gpio As *FT232H_GPIO
+
+	Sub FT232H()(_bufSize As Long)
+		bufSize = _bufSize
+		if bufSize = 0 Then bufSize=FT232HL_BUFSIZE_DEFAULT
+		buf=calloc(bufSize)
+		Dim test As *FT232H
+		test=VarPtr(This)
+
+		gpio = new FT232H_GPIO(test)
+		spi = new FT232H_SPI( test , gpio)
+		iic = new FT232H_IIC( test , gpio)
+
+	End Sub
+
+	Sub ~FT232H()
+		free(buf)
+		if hFT<>0 Then FT_Close(hFT)
+		delete gpio
+		delete spi
+		delete iic
+	End Sub
+
+	Function openDevice(deviceID As Long) As BOOL
+		FT_Open(deviceID,hFT)
+		if hFT=0 Then ExitFunction
+		if SetupFTDI_Device()=FALSE Then ExitFunction
+		openDevice = TRUE
+	End Function
+
+	Sub addCommand(cmd As BytePtr,length As DWord)
+		if nowBufCount+length > bufSize Then sendCommands()
+		memcpy(buf+nowBufCount,cmd,length)
+		nowBufCount+=length
+	End Sub
+
+	Sub addReadRequest(cmd As BytePtr,length As DWord,reciveLength As DWord)
+		addCommand(cmd,length)
+		rsvLength += reciveLength
+	End Sub
+
+	Function getReciveDataSize() As DWord
+		getReciveDataSize = rsvLength
+	End Function
+
+	'length=0 で自動
+	Function reciveData(rsvBuffer As BytePtr,length As DWord) As BOOL
+		Dim dwAB As DWord
+		if length = 0 Then length = rsvLength
+		if FT_Read(hFT,rsvBuffer,length,dwAB)=FT_OK Then reciveData=TRUE
+		if dwAB<>length Then reciveData=FALSE
+		rsvLength=0
+	End Function
+
+	Function sendCommands() As BOOL
+	/*	printf(ex"SEND COMMANDS : %d commands\n",nowBufCount)
+		Dump(buf,16*4)
+		Print
+		Print'*/
+		dim dwAB As DWord
+		if FT_Write(hFT,buf,nowBufCount,dwAB)<>FT_OK Then ExitFunction
+		if dwAB<>nowBufCount Then ExitFunction
+		nowBufCount=0
+		sendCommands = TRUE
+
+		'debug
+		FillMemory(buf,16*4,&HAA)
+	End Function
+
+	Sub listupDeviceToConsole()
+		Dim devCount As Long
+
+		if FT_GetNumDevices(devCount,NULL,FT_LIST_BY_NUMBER_ONLY)<>FT_OK Then Print "FTDI Driver Error." : ExitFunction
+		if devCount=0 Then Print "FTDI Device not found.":ExitFunction
+		printf(ex"Found FTDI Devices : %d\n",devCount)
+
+		Dim i As DWord
+		Dim serial[64] As Byte,desc[64] As Byte
+		For i = 0 To devCount-1
+			if FT_ListDevices(i,serial,FT_LIST_BY_INDEX or FT_OPEN_BY_SERIAL_NUMBER)<>FT_OK Then ExitFunction
+			if FT_ListDevices(i,desc  ,FT_LIST_BY_INDEX or FT_OPEN_BY_DESCRIPTION)<>FT_OK Then ExitFunction
+			printf(ex" [%02d]%s - %s\n",i,serial As DWORD,desc As DWORD)
+		Next i
+		Print
+	EndSub
+
+	Sub flush()
+		Dim ftStatus As Long,bufsize As DWord,buf As BytePtr,dwAB As DWord
+		
+		ftStatus = ftStatus or FT_GetQueueStatus(hFT, bufsize)		 ' Get the number of bytes in the FT2232H receive buffer
+		buf=calloc(bufsize)
+
+		if (ftStatus = FT_OK) And  (bufsize > 0) Then _
+			FT_Read(hFT, buf, bufsize, dwAB)  'Read out the data from FT2232H receive buffer
+		free(buf)
+	End Sub
+
+	Sub showBuf()	'デバッグ
+		Dump(buf,nowBufCount)
+		Print
+	End Sub
+Private
+
+	Function SetupFTDI_Device() As Long
+		'セットアップ
+		Dim ftStatus As Long
+
+	'	ftStatus = ftStatus or FT_SetFlowControl(hFT, FT_FLOW_DTR_DSR or FT_FLOW_RTS_CTS, 0, 0)
+		ftStatus = ftStatus or FT_SetUSBParameters(hFT, USB_BUFFER_SIZE, USB_BUFFER_SIZE)	'Set USB request transfer size
+		ftStatus = ftStatus or FT_SetChars(hFT, FALSE, 0, FALSE, 0)							'Disable event and error characters
+		ftStatus = ftStatus or FT_SetTimeouts(hFT, 0, 5000)									'Sets the read and write timeouts in milliseconds for the FT2232H
+		ftStatus = ftStatus or FT_SetLatencyTimer(hFT, FT_USB_LATENCY)						'Set the latency timer
+		ftStatus = ftStatus or FT_SetBitMode(hFT, &H0, FT_BITMODE_RESET) 					'Reset controller
+		ftStatus = ftStatus or FT_SetBitMode(hFT, &H0, FT_BITMODE_MPSSE)				 	'Enable MPSSE mode
+		Sleep(10)
+
+		if ftStatus<>0 Then
+			SetupFTDI_Device=FALSE
+			ExitFunction
+		End If
+		SetupFTDI_Device=TRUE
+	End Function
+End Class
+
+Class FT232H_GPIO
+Private
+	bord As *FT232H
+	cmd[3] As Byte	'一々初期化されないように
+Public
+	ADBus As Byte
+	ADBusDir As Byte
+	ACBus As Byte
+	ACBusDir As Byte
+
+	Sub FT232H_GPIO(ft As *FT232H)
+		bord=ft
+	End Sub
+
+	'1 is output
+	Sub setADBusDir(dir As Byte) 'SPIとかの方
+		ADBusDir=dir
+		ADBusApply()
+	End Sub
+
+	Sub setADBus(data As Byte)
+		ADBus = data
+		ADBusApply()
+	End Sub
+
+	Sub setADBusEx(data As Byte,dir As Byte)
+		ADBus = data
+		ADBusDir = dir
+		ADBusApply()
+	End Sub
+
+	Sub setADBusBit(bit As Byte,value As Byte)
+'		printf("ADBusUpdate : %02X -> ",ADBus)
+		if value = 0 Then
+			ADBus = ADBus And NOT(1 << bit)
+		Else
+			ADBus = ADBus or (1 << bit)
+		End If
+'		printf(ex"%02X (%x)\n",ADBus,(1 << bit))
+		ADBusApply()
+	End Sub
+
+	Sub ADBusApply()
+		cmd[0]=MPSSE_SET_LOBYTE
+		cmd[1]=ADBus
+		cmd[2]=ADBusDir
+		bord->addCommand(cmd,3)
+	End Sub
+
+	Sub ADBusReadRequest()
+		bord->addReadRequest(ex"\x81",1,1)
+	End Sub
+
+	'--------------------------------------------------
+	Sub setACBusDir(dir As Byte)
+		ACBusDir=dir
+		ACBusApply()
+	End Sub
+	
+	Sub setACBus(data As Byte)
+		ACBus = data
+		ACBusApply()
+	End Sub
+
+	Sub setACBus(data As Byte,dir As Byte)
+		ACBus = data
+		ACBusDir = dir
+		ACBusApply()
+	End Sub
+
+	Sub setACBusBit(bit As Byte,value As Byte)
+		if value = 0 Then
+			ACBus = ACBus And NOT(1 << bit)
+		Else
+			ACBus = ACBus or (1 << bit)
+		End If
+		ACBusApply()
+	End Sub
+
+	Sub ACBusApply()
+		cmd[0]=MPSSE_SET_HIBYTE
+		cmd[1]=ACBus
+		cmd[2]=ACBusDir
+		bord->addCommand(cmd,3)
+	End Sub
+
+	Sub ACBusReadRequest()
+		bord->addReadRequest(ex"\x83",1,1)
+	End Sub
+
+	'-------------------------------------------------------
+	Sub setAllBus(data As Word)
+		ADBus = data And &HFF
+		ACBus = (data>>8) And &HFF
+		ADBusApply()
+		ACBusApply()
+	End Sub
+
+End Class
+
+
+'----------------
+' FT232H - SPI
+' 速度重視なのでsendするまで実際の通信はしない
+'----------------
+Enum MPSSE_SERIAL_MODE_EASY
+	FT232H_SPI_DEFAULT
+	FT232H_SPI_NEGATIVE_EDGE
+	FT232H_SPI_POSITIVE_EDGE
+End Enum
+
+Class FT232H_SPI
+Private
+	ftdev As *FT232H
+	gpio As *FT232H_GPIO
+
+	readCommand As Byte
+	writeCommand As Byte
+	readWriteCommand As Byte
+	cmd[3] As byte
+
+Public
+	Sub FT232H_SPI(ft As *FT232H , GPIO_CLS As *FT232H_GPIO)
+		ftdev=ft
+		gpio=GPIO_CLS
+	End Sub
+	
+	/* Setting device by MPSSE command
+	 * [85]LoopBackDisable
+	 * [97]Enable adaptive clocking 
+	 * [8d]disable 3 Phase Data Clocking -> duty 50%
+	 * [8A]Disables the clk divide by 5 to allow for a 60MHz master clock
+	 * [86]Set TCK Clock [0002]->10MHz
+	 */
+	Sub init(speed_MHz As Double,mode As MPSSE_SERIAL_MODE_EASY,LSBFirstMode As BOOL,enableTriState As BOOL)
+		'clock set
+		Dim CLK As Word
+		CLK=(60/(speed_MHz*2)-1) As Word
+	'	Print "SET CLK:";CLK
+		cmd[0]=MPSSE_SET_TCK 
+		cmd[1]=(CLK And &HFF) As Byte
+		cmd[2]=((CLK>>8) And &HFF) As Byte
+		ftdev->addCommand(cmd,3)
+
+		'setup option
+		'ftdev->addCommand(ex"\x86\x97\x8d\x8A",4)
+		ftdev->addCommand(ex"\x8A\x97\x8c\x85",4)
+		if enableTriState=TRUE Then ftdev->addCommand(ex"\x9E\x04\x00",3)
+	
+		gpio->setADBusEx(&HFF,&HFB)
+
+
+/*		writeCommand = LSB_POSITIVE_EDGE_BYTES_OUT
+'		writeCommand = LSB_NEGATIVE_EDGE_BYTES_OUT
+		readCommand  = LSB_POSITIVE_EDGE_BYTES_IN
+'		readCommand  = LSB_NEGATIVE_EDGE_BYTES_IN
+'		readWriteCommand = LSB_NEGATIVE_OUT_POSITIVE_INPUT
+'		readWriteCommand = LSB_POSITIVE_OUT_NEGATIVE_INPUT
+		readWriteCommand = MPSSE_WRITE_ENABLE or MPSSE_LSB_FIRST or MPSSE_READ_ENABLE'*/
+		Dim opt As Byte
+		if LSBFirstMode=TRUE Then
+			opt=MPSSE_LSB_FIRST
+		End If
+
+		if mode = FT232H_SPI_POSITIVE_EDGE Then
+			writeCommand = MSB_POSITIVE_EDGE_BYTES_OUT or opt
+			readCommand  = MSB_POSITIVE_EDGE_BYTES_IN  or opt
+			readWriteCommand = MSB_POSITIVE_IO  or opt 'WRITE_ENABLE or LSB_FIRST or READ_ENABLE
+
+		Else
+			writeCommand = MSB_NEGATIVE_EDGE_BYTES_OUT or opt
+			readCommand  = MSB_NEGATIVE_EDGE_BYTES_IN or opt
+			readWriteCommand = MSB_NEGATIVE_IO  or opt 'MPSSE_LSB_FIRST or MPSSE_WRITE_ENABLE or READ_ENABLE or MPSSE_NEGATIVE_WRITE or MPSSE_NEGATIVE_READ
+		End If
+	End Sub
+
+	Sub setIOCommands(read As Byte, write As Byte, IO As Byte)
+		if read<>0 Then readCommand = read
+		if write<>0 Then writeCommand = write
+		if IO<>0 Then readWriteCommand = IO 
+	End Sub
+
+	Sub sendData(data As BytePtr,length As DWord)
+		if length=0 Then ExitSub
+		length--
+		cmd[0]=writeCommand
+		cmd[1]=length and &H00FF
+		cmd[2]=length>>8
+		ftdev->addCommand(cmd,3)
+		ftdev->addCommand(data,length+1)
+	End Sub
+
+	Sub sendByte(data As Byte)
+		cmd[0]=writeCommand
+		cmd[1]=0
+		cmd[2]=0
+		ftdev->addCommand(cmd,3)
+		ftdev->addCommand(VarPtr(data),1)
+	End Sub
+
+	Sub DeviceEnable(pin As Byte,HiLo As BOOL)
+		gpio->setADBusBit(pin, (Not(HiLo) And 1) As Byte)
+	End Sub
+
+	Sub reciveRequest(length As DWord)
+		if length=0 Then ExitSub
+		length--
+		cmd[0]=readCommand
+		cmd[1]=(length and &HFF) As Byte
+		cmd[2]=(length>>8) As Byte
+		ftdev->addCommand(cmd,3)
+	End Sub
+
+	Sub rwData(writeData As BytePtr,length As DWord)
+		if length=0 Then ExitSub
+		length--
+		cmd[0]=readWriteCommand
+		cmd[1]=(length and &H00FF) As Byte
+		cmd[2]=(length>>8) As Byte
+		ftdev->addCommand(cmd,3)
+		ftdev->addCommand(writeData,length+1)
+	End Sub
+
+	Function sendByteImmediate(cmd As Byte) As BOOL
+		sendData(VarPtr(cmd),1)
+		ft->sendCommands()
+	End Function
+
+	Function sendDataImmediate(cmd As BytePtr,cmdLength As DWord) As BOOL
+		sendData(cmd,cmdLength)
+		ft->sendCommands()
+	End Function
+
+	Function reciveRequestImmediate(buf As BytePtr, length As DWord) As BOOL
+		reciveRequest(length)
+		ft->sendCommands()
+		ft->reciveData(buf,length)
+	End Function
+End Class
+
+'----------------
+' FT232H - I2C
+'速度無視でとりあえず使えればいいレベル
+'----------------
+Class FT232H_IIC
+Private
+	ftdev As *FT232H
+	gpio As *FT232H_GPIO
+	cmd[3] As Byte
+	binit AS BOOL
+
+Public
+	Sub FT232H_IIC(ft As *FT232H , GPIO_CLS As *FT232H_GPIO)
+		ftdev=ft
+		gpio=GPIO_CLS
+	'	stop()
+	End Sub
+	
+	Sub init()
+		ftdev->addCommand(ex"\x85\x97\x8c\x86\x03\x00",6)
+	End Sub
+
+	Sub start(slaveAdr As DWord)
+		'CLKをH->Lにしてスタートを表す
+		'                    [ CLK HIGH ][ D0 LOW   ][ CLK LOW  ]
+		ftdev->addCommand(ex"\x80\x03\x03\x80\x01\x03\x80\x00\x03",9)
+		send(slaveAdr AS Byte)
+	End Sub
+
+	Sub stop()
+		'                    [ CLK HIGH ][ D0 LOW   ]
+		ftdev->addCommand(ex"\x80\x03\x03\x80\x01\x03",3*2)
+	End Sub
+
+	Function read() As Byte
+		'Read & SendACK          [     IN DIRECTION     ][       SEND ACK       ][ OUT DIR  ]
+		ftdev->addReadRequest(ex"\x80\x00\x01\x20\x00\x00\x80\x00\x03\x80\x01\x03\x80\x00\x03",15,1)
+
+		ftdev->sendCommands()
+		read = ftdev->reciveData(VarPtr(ReadByteAndSendACK), 1)
+	End Function
+
+	Function send(data As Byte) As Long
+		'SetData             [ MSB_FALLING_EDGE_CLOCK_BYTE_OUT ]
+		ftdev->addCommand(ex"\x11\x00\x00",3)
+		ftdev->addCommand(VarPtr(data),1)
+
+		'Get ACK             [ DO INPUT ][ ↑CLK BIT][ DO OUTPUT]
+		ftdev->addReadRequest(ex"\x80\x00\x01\x22\x00\x87\x80\x00\x03",3*3,1)
+	
+'		ftdev->showBuf()
+		ftdev->sendCommands()
+		ftdev->reciveData(cmd, 1)
+
+		if (cmd[0] and &H01) = 0 Then send=TRUE
+
+	End Function
+
+	Function writeReg(slaveAdr As DWord,ctrl As Byte,data As Byte) As Long
+		writeReg=TRUE
+		ftdev->iic->start((slaveAdr<<1) AS Byte)
+		if ftdev->iic->send(ctrl)<>TRUE Then writeReg=FALSE
+		if ftdev->iic->send(data)<>TRUE Then writeReg=FALSE
+		ftdev->iic->stop()
+	End Function
+
+	Function writeRegContinuable(ctrl As Byte,data As Byte) As Long
+		writeRegContinuable=TRUE
+		if ftdev->iic->send(ctrl)<>TRUE Then writeRegContinuable=FALSE
+		if ftdev->iic->send(data)<>TRUE Then writeRegContinuable=FALSE
+	End Function
+
+	Function sendBulk(data As BytePtr,len As DWord) As Long
+		Dim i As Long
+		sendBulk=TRUE
+		
+		For i=0 To len		
+			if ftdev->iic->send(data[i])<>TRUE Then 	sendBulk=FALSE
+		Next
+	End Function
+End Class

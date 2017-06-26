@@ -1,0 +1,89 @@
+'i2c LCD ST2032 library for AB-FT232HLib by RGBA_CRT 2017
+
+Const ST7032_SEND_DAT = &H00
+Const ST7032_SEND_CMD = &H40
+
+Class FT232H_ST7032
+Private
+	slaveAdr AS Byte
+	ft AS *FT232H
+	DispOpt AS Byte
+	scale AS POINTAPI
+
+Public
+	Sub FT232H_ST7032(ftc AS *FT232H)(_slaveAdr As Byte)
+		if _slaveAdr=0 Then
+			slaveAdr=&H3E
+		Else
+			slaveAdr=_slaveAdr
+		End If
+		ft=ftc
+	End Sub
+
+	Sub init()(contrast AS Byte,bDispCur AS BOOL,bDispUnderLine As BOOL,scaleSet AS *POINTAPI)
+		if scaleSet=NULL Then
+			scale.x=8	:	scale.y=2	'8x2液晶
+		Else
+			scale.x=scaleSet->x : scale.y=scaleSet->y
+		End If
+
+		cmd(&h38)	 ' 8bit 2line Normal mode
+		cmd(&h39)	 ' 8bit 2line Extend mode
+		cmd(&h14)	 ' OSC 183Hz BIAS 1/5
+
+		if contrast=0 Then contrast=40
+		setContrast(contrast)
+
+		cmd(&h38)	 ' Set Normal mode
+		cmd(&h01)	 ' Clear Display
+
+		DispOpt=(&h0C or ((bDispUnderLine  And 1) << 1) or (bDispCur And 1) ) AS Byte
+		cmd(DispOpt)	 ' Display On
+		cmd(DispOpt)	 ' Display On
+
+	End Sub
+
+	Sub setContrast(contrast AS Byte)
+		cmd(&h39)	 ' 8bit 2line Extend mode
+		
+		/* コントラスト設定 */
+		cmd((&h70 + (contrast And &h0F)))	'下位4bit
+		cmd((&h5C + (contrast >> 4)))		'上位2bit
+		cmd(&h6B)	 ' Follwer for 3.3V
+
+		cmd(&h38)	 ' Set Normal mode
+		cmd(&h01)	 ' Clear Display
+	End Sub
+
+	Sub setCursole(x AS Byte,y AS Byte)
+		cmd(&H80+y*&H40+x)
+	End Sub
+
+	Sub print(x AS Byte,y AS Byte,text AS BytePtr)
+		Dim len as Long
+		len=lstrlen(text)
+		if len > scale.x Then len=scale.x
+		setCursole(x,y)
+
+		ft->iic->start(slaveAdr<<1)
+		ft->iic->send(ST7032_SEND_CMD)
+		ft->iic->sendBulk(text,len)
+		ft->iic->stop()
+	End Sub
+
+	Sub printf(x AS Byte,y AS Byte,format AS BytePtr)(arg1 AS VoidPtr,arg2 AS VoidPtr,arg3 AS VoidPtr,arg4 AS VoidPtr)
+		this.print(x,y,sprintfStr(format,arg1,arg2,arg3,arg4))
+	End Sub
+
+Private
+	
+	Sub cmd(cmd AS Byte)
+		ft->iic->writeReg(slaveAdr,ST7032_SEND_DAT,cmd)
+	End Sub
+
+	Sub writeData(data AS Byte)
+		ft->iic->writeReg(slaveAdr,ST7032_SEND_CMD,data)
+	End Sub
+
+
+End Class

@@ -1,0 +1,105 @@
+'[SPI]IO Extender IC MCP23S17 library for AB-FT232HLib by RGBA_CRT 2017
+
+Const MCP23017_ADDRESS 	 = &H20
+
+' registers
+Const MCP23017_IODIRA 	 = &H00
+Const MCP23017_IPOLA 	 = &H02
+Const MCP23017_GPINTENA  = &H04
+Const MCP23017_DEFVALA 	 = &H06
+Const MCP23017_INTCONA 	 = &H08
+Const MCP23017_IOCONA 	 = &H0A
+Const MCP23017_GPPUA 	 = &H0C
+Const MCP23017_INTFA 	 = &H0E
+Const MCP23017_INTCAPA 	 = &H10
+Const MCP23017_GPIOA 	 = &H12
+Const MCP23017_OLATA 	 = &H14
+
+Const MCP23017_IODIRB 	 = &H01
+Const MCP23017_IPOLB 	 = &H03
+Const MCP23017_GPINTENB  = &H05
+Const MCP23017_DEFVALB 	 = &H07
+Const MCP23017_INTCONB 	 = &H09
+Const MCP23017_IOCONB 	 = &H0B
+Const MCP23017_GPPUB 	 = &H0D
+Const MCP23017_INTFB 	 = &H0F
+Const MCP23017_INTCAPB 	 = &H11
+Const MCP23017_GPIOB 	 = &H13
+Const MCP23017_OLATB 	 = &H15
+
+Const MCP23017_INT_ERR = 255
+
+Const MCP_CONTROLBYTE_WRITE=&H40
+Const MCP_CONTROLBYTE_READ =&H41
+
+Class FT232H_MCP23017
+Private
+	ft AS *FT232H
+	csPin AS Byte
+Public
+	Sub FT232H_MCP23017(ft_cls AS *FT232H,cs AS Byte)
+		ft=ft_cls
+		csPin = cs
+
+		ft->spi->init(20,FT232H_SPI_NEGATIVE_EDGE,FALSE,FALSE)
+		ft->gpio->setADBus(&H00)
+		
+		WriteRegister(MCP23017_GPPUA,&HFF)	'GPIO-A pullup Enable
+		WriteRegister(MCP23017_GPPUB,&HFF)	'GPIO-B pullup Enable
+
+		ft->sendCommands()
+	End Sub
+
+	Sub pullupSet(GPIOA AS Byte,GPIOB AS Byte)
+		WriteRegister(MCP23017_GPPUA,GPIOA)
+		WriteRegister(MCP23017_GPPUB,GPIOB)
+	End Sub
+
+	'dir: 1=input 0=output
+	Sub SetPort(dir As Word,value As Word) 
+		WriteRegisterWord(MCP23017_IODIRA,dir)
+		WriteRegisterWord(MCP23017_GPIOA,value)
+	End Sub
+
+	'dir: 1=input 0=output
+	Sub SetPortValA(value As Byte) 
+		WriteRegister(MCP23017_GPIOA,value)
+	End Sub
+
+	'dir: 1=input 0=output
+	Sub SetPortValB(value As Byte) 
+		WriteRegister(MCP23017_GPIOB,value)
+	End Sub
+
+	'dir: 1=input 0=output
+	Sub SetPortValWord(value As Word) 
+		WriteRegisterWord(MCP23017_GPIOA,value)
+	End Sub
+
+		
+Private
+	Sub WriteRegister(reg As Byte,value As Byte) 
+		ft->spi->DeviceEnable(csPin,TRUE)
+			ft->spi->sendByte(MCP_CONTROLBYTE_WRITE)
+			ft->spi->sendByte(reg)
+			ft->spi->sendByte(value)
+		ft->spi->DeviceEnable(csPin,FALSE)
+	End Sub
+
+	Sub ReadRegister(reg AS byte)
+		ft->spi->DeviceEnable(csPin,FALSE)
+			ft->spi->sendByte(MCP_CONTROLBYTE_READ)
+			ft->spi->sendByte(reg)
+			ft->spi->reciveRequest(1)
+		ft->spi->DeviceEnable(csPin,TRUE)			
+	End Sub
+
+	Sub WriteRegisterWord(reg As Byte,value As Word) 
+		ft->spi->DeviceEnable(csPin,TRUE)
+			ft->spi->sendByte(MCP_CONTROLBYTE_WRITE)
+			ft->spi->sendByte(reg)
+			ft->spi->sendByte(value)
+			ft->spi->sendByte(value>>8)
+		ft->spi->DeviceEnable(csPin,FALSE)
+	End Sub
+End Class
