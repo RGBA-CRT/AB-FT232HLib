@@ -30,7 +30,8 @@ Declare Function FT_SetBreakOff Lib "FTD2XX.DLL" (lngHandle As FT_HANDLE) As Lon
 Declare Function FT_GetStatus Lib "FTD2XX.DLL" (lngHandle As FT_HANDLE, ByRef lngRxBytes As Long, ByRef lngTxBytes As Long, ByRef lngEventsDWord As DWord) As Long
 Declare Function FT_SetEventNotification Lib "FTD2XX.DLL" (lngHandle As FT_HANDLE, dwEventMask As Long, pVoid As Long) As Long
 Declare Function FT_ResetDevice Lib "FTD2XX.DLL" (lngHandle As FT_HANDLE) As Long
-Declare Function FT_GetBitMode Lib "FTD2XX.DLL" (lngHandle As FT_HANDLE, ByRef intData As Any) As Long
+Declare Function FT_ResetPort Lib "FTD2XX.DLL" (lngHandle As FT_HANDLE) As Long
+Declare Function FT_GetBitMode Lib "FTD2XX.DLL" (lngHandle As FT_HANDLE, ByRef intData As Byte) As Long
 Declare Function FT_SetBitMode Lib "FTD2XX.DLL" (lngHandle As FT_HANDLE, intMask As Byte, intMode As Byte) As Long
 Declare Function FT_SetLatencyTimer Lib "FTD2XX.DLL" (Handle AS FT_HANDLE, pucTimer As Byte) As Long
 Declare Function FT_GetLatencyTimer Lib "FTD2XX.DLL" (Handle AS FT_HANDLE, ByRef ucTimer As Long) As Long

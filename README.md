@@ -2,6 +2,7 @@
 - FT232H(d2xx)　用私用ライブラリ for ActiveBasic4
 - 私用なので設計はクソですが、動作確認はとれているのでサンプルコードとしては使えると思います。
 - FTDI社のD2XXドライバが必要になります。[[link]](http://www.ftdichip.com/Drivers/D2XX.htm)
+- FT_Progを用いて適切なコンフィギュレーションをしてください。サンプルテンプレートはconfig_eeprom.xmlです。
 
 ## ビルドに使用する場合
 [USB-Si5351aCtrl](https://github.com/RGBA-CRT/USB-Si5351aCtrl)やFT232H-EPROM-PROGなどをビルドする場合、それらのディレクトリをこのライブラリの下に配置してください。これらのライブラリは#include "../FT232HLib.sbp"という感じで参照しています。
