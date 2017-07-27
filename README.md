@@ -1,5 +1,5 @@
 # AB-FT232HLib
-- FT232H(d2xx)　用私用ライブラリ for ActiveBasic4
+- FT232H(d2xx)用 私用ライブラリ for [ActiveBasic4](https://www.activebasic.com/)
 - 私用なので設計はクソですが、動作確認はとれているのでサンプルコードとしては使えると思います。
 - FTDI社のD2XXドライバが必要になります。[[link]](http://www.ftdichip.com/Drivers/D2XX.htm)
 - FT_Progを用いて適切なコンフィギュレーションをしてください。サンプルテンプレートはconfig_eeprom.xmlです。

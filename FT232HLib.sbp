@@ -162,15 +162,21 @@ Public
 
 	Sub FT232H_GPIO(ft As *FT232H)
 		bord=ft
+
+		'初回なので変数と同期する
+		ADBusApply()
+		ACBusApply()
 	End Sub
 
 	'1 is output
 	Sub setADBusDir(dir As Byte) 'SPIとかの方
+		if ADBusDir = dir Then ExitSub
 		ADBusDir=dir
 		ADBusApply()
 	End Sub
 
 	Sub setADBus(data As Byte)
+		if ADBus = data Then ExitSub
 		ADBus = data
 		ADBusApply()
 	End Sub
@@ -182,6 +188,8 @@ Public
 	End Sub
 
 	Sub setADBusBit(bit As Byte,value As Byte)
+		Dim old AS Byte
+		old=ADBus
 '		printf("ADBusUpdate : %02X -> ",ADBus)
 		if value = 0 Then
 			ADBus = ADBus And NOT(1 << bit)
@@ -189,6 +197,8 @@ Public
 			ADBus = ADBus or (1 << bit)
 		End If
 '		printf(ex"%02X (%x)\n",ADBus,(1 << bit))
+		if old=ADBus Then ExitSub		
+
 		ADBusApply()
 	End Sub
 
@@ -204,12 +214,14 @@ Public
 	End Sub
 
 	'--------------------------------------------------
-	Sub setACBusDir(dir As Byte)
+	Sub setACBusDir(dir As Byte)		
+		if ACBusDir=dir Then ExitSub
 		ACBusDir=dir
 		ACBusApply()
 	End Sub
 	
 	Sub setACBus(data As Byte)
+		if ACBus = data Then ExitSub
 		ACBus = data
 		ACBusApply()
 	End Sub
@@ -243,13 +255,13 @@ Public
 	'-------------------------------------------------------
 	'ACBus 8~9については仕様が不明, AE-FT232HではLEDが接続されている
 	'MPSSE管轄外なのでSendCommands()なしで即実行
+	'※このメソッドを使うと速度が落ちることを確認
 
 	'ACbus8-9にセット
 	Sub setExtACBus(value As Byte)
 		Dim bef AS Byte,setValue AS Byte
 		bef=FT_GetBitMode(bord->hFT,bef)
 		setValue=(&HF0 or (value And &H03)<<2)
-'(		DBM(Hex$(setValue)+" bef="+Hex$(bef))
 		FT_SetBitMode(bord->hFT, setValue , FT_BITMODE_CBUS_BITBANG)
 		FT_SetBitMode(bord->hFT, &H0, FT_BITMODE_MPSSE)				 	'Enable MPSSE mode
 	End Sub
@@ -300,10 +312,9 @@ Public
 	 * [86]Set TCK Clock [0002]->10MHz
 	 */
 	Sub init(speed_MHz As Double,mode As MPSSE_SERIAL_MODE_EASY,LSBFirstMode As BOOL,enableTriState As BOOL)
-		'clock set
+		'クロックを計算する
 		Dim CLK As Word
 		CLK=(60/(speed_MHz*2)-1) As Word
-	'	Print "SET CLK:";CLK
 		cmd[0]=MPSSE_SET_TCK 
 		cmd[1]=(CLK And &HFF) As Byte
 		cmd[2]=((CLK>>8) And &HFF) As Byte
