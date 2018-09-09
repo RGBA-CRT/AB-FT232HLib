@@ -110,6 +110,10 @@ Public
 		listupDeviceToConsole=TRUE
 	EndFunction
 
+	Function getNumberOfDevice() As Long
+		FT_GetNumDevices(getNumberOfDevice,NULL,FT_LIST_BY_NUMBER_ONLY)
+	End Function
+
 	Sub wait(value AS Word)
 		Dim cmd[3] AS Byte
 		cmd[0]=&H9C
