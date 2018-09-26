@@ -53,6 +53,8 @@ Public
 		End If
 		memcpy(buf+nowBufCount,cmd,length)
 		nowBufCount+=length
+
+	'	sendCommands()
 	End Sub
 
 	Sub addReadRequest(cmd As BytePtr,length As DWord,reciveLength As DWord)
@@ -66,6 +68,13 @@ Public
 
 	'length=0 ‚ÅŽ©“®
 	Function reciveData(rsvBuffer As BytePtr,length As DWord) As BOOL
+		'check buffer
+	/*	Dim curBufSize AS DWord
+		Sleep(200)
+		if FT_GetQueueStatus(hFT,ByVal VarPtr(curBufSize))<>FT_OK Then debug
+		if rsvLength<> curBufSize Then	printf(ex"[FT232HLib]Waring: rx buffer length does not mutch! localVar:%d deviceVar:%d\n",rsvLength,curBufSize)
+		length=curBufSize
+*/
 		Dim dwAB As DWord
 		if length = 0 Then length = rsvLength
 		if FT_Read(hFT,rsvBuffer,length,dwAB)=FT_OK Then reciveData=TRUE
@@ -74,19 +83,26 @@ Public
 	End Function
 
 	Function sendCommands() As BOOL
-	'	printf(ex"[FT232H] SendCommands %04X/%04X %d%%\n",nowBufCount,bufSize,nowBufCount/bufSize*100)
+		printf(ex"[FT232H] SendCommands %04X/%04X %dKB ::: %d%%  ",nowBufCount,bufSize,nowBufCount/1024,nowBufCount/bufSize*100)
 	/*	printf(ex"SEND COMMANDS : %d commands\n",nowBufCount)
 		Dump(buf,16*4)
 		Print
 		Print'*/
-		dim dwAB As DWord
-		if FT_Write(hFT,buf,nowBufCount,dwAB)<>FT_OK Then ExitFunction
-		if dwAB<>nowBufCount Then ExitFunction
+		dim dwAB As DWord,totalWriteSize AS DWord
+
+*FTSC_WRITE_BUFFER
+		if FT_Write(hFT,buf,nowBufCount,dwAB)<>FT_OK Then debug:ExitFunction
+		totalWriteSize+=dwAB
+		if totalWriteSize<nowBufCount Then 
+			printf(ex"[FT232H] traffic overflow!!!!!!!! dwAB%d\n",dwAB)
+			Sleep(100)
+			goto *FTSC_WRITE_BUFFER
+		End If
 		nowBufCount=0
 		sendCommands = TRUE
 
 		'debug
-		FillMemory(buf,16*4,&HAA)
+		'FillMemory(buf,16*4,&HAA)
 	End Function
 
 	Function listupDeviceToConsole() AS BOOL
@@ -125,6 +141,7 @@ Public
 
 	Sub flush()
 		sendCommands()
+		Sleep(200)
 
 		Dim ftStatus As Long,bufsize As DWord,buf As BytePtr,dwAB As DWord
 
@@ -134,7 +151,7 @@ Public
 		if (ftStatus = FT_OK) And  (bufsize > 0) Then _
 			FT_Read(hFT, buf, bufsize, dwAB)  'Read out the data from FT2232H receive buffer
 
-'		printf(ex"[FT232H][flush] %d bytes destroyed.\n",bufsize)
+		printf(ex"[FT232H][flush] %d bytes destroyed.\n",bufsize)
 		free(buf)
 	End Sub
 
@@ -351,7 +368,7 @@ Public
 
 		'setup option
 		'ftdev->addCommand(ex"\x86\x97\x8d\x8A",4)
-		ftdev->addCommand(ex"\x8A\x97\x8c\x85",4)
+		 ftdev->addCommand(ex"\x8A\x97\x8c\x85",4)
 		if enableTriState=TRUE Then ftdev->addCommand(ex"\x9E\x04\x00",3)
 	
 		gpio->setADBusEx(&HFF,&HFB)

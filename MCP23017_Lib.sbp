@@ -37,11 +37,13 @@ Private
 	ft AS *FT232H
 	csPin AS Byte
 Public
-	Sub FT232H_MCP23017(ft_cls AS *FT232H,cs AS Byte)
+	Sub FT232H_MCP23017(ft_cls AS *FT232H,cs AS Byte)(freq As Single)
 		ft=ft_cls
 		csPin = cs
 
-		ft->spi->init(20,FT232H_SPI_NEGATIVE_EDGE,FALSE,FALSE)
+		if freq=0.0 Then freq=20
+		ft->spi->init(freq As Double,FT232H_SPI_NEGATIVE_EDGE,FALSE,FALSE)
+		ft->spi->setIOCommands(MSB_POSITIVE_EDGE_BYTES_IN,NULL,NULL)
 		ft->gpio->setADBus(&H00)
 		
 		WriteRegister(MCP23017_GPPUA,&HFF)	'GPIO-A pullup Enable
@@ -83,6 +85,14 @@ Public
 	Sub ReadPortRequestWord()
 		ReadRegister(MCP23017_GPIOA,2)
 	EndSub
+
+	Sub ReadPortRequestA()
+		ReadRegister(MCP23017_GPIOA,1)
+	EndSub
+
+	Sub ReadPortRequestB()
+		ReadRegister(MCP23017_GPIOB,1)
+	EndSub
 		
 Private
 	Sub WriteRegister(reg As Byte,value As Byte) 
@@ -93,21 +103,22 @@ Private
 		ft->spi->DeviceEnable(csPin,FALSE)
 	End Sub
 
-	'length=1 or 2
-	Sub ReadRegister(reg AS byte,length AS Byte)
-		ft->spi->DeviceEnable(csPin,FALSE)
-			ft->spi->sendByte(MCP_CONTROLBYTE_READ)
-			ft->spi->sendByte(reg)
-			ft->spi->reciveRequest(length)
-		ft->spi->DeviceEnable(csPin,TRUE)			
-	End Sub
-
 	Sub WriteRegisterWord(reg As Byte,value As Word) 
 		ft->spi->DeviceEnable(csPin,TRUE)
 			ft->spi->sendByte(MCP_CONTROLBYTE_WRITE)
 			ft->spi->sendByte(reg)
-			ft->spi->sendByte(value)
+			ft->spi->sendByte(value And &H00FF)
 			ft->spi->sendByte(value>>8)
 		ft->spi->DeviceEnable(csPin,FALSE)
 	End Sub
+
+	'length=1 or 2
+	Sub ReadRegister(reg AS byte,length AS Byte)
+		ft->spi->DeviceEnable(csPin,TRUE)
+			ft->spi->sendByte(MCP_CONTROLBYTE_READ)
+			ft->spi->sendByte(reg)
+			ft->spi->reciveRequest(length)
+		ft->spi->DeviceEnable(csPin,FALSE)			
+	End Sub
+
 End Class
