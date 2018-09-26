@@ -423,7 +423,7 @@ Public
 		cmd[0]=readCommand
 		cmd[1]=(length and &HFF) As Byte
 		cmd[2]=(length>>8) As Byte
-		ftdev->addCommand(cmd,3)
+		ftdev->addReadRequest(cmd,3,length+1)
 	End Sub
 
 	Sub rwData(writeData As BytePtr,length As DWord)
