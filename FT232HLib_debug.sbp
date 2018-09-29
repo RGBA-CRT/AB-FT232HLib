@@ -83,7 +83,7 @@ Public
 	End Function
 
 	Function sendCommands() As BOOL
-		printf(ex"[FT232H] SendCommands %04X/%04X %dKB ::: %d%%  ",nowBufCount,bufSize,nowBufCount/1024,nowBufCount/bufSize*100)
+	'	printf(ex"[FT232H] SendCommands %04X/%04X %dKB ::: %d%%  \n",nowBufCount,bufSize,nowBufCount/1024,nowBufCount/bufSize*100)
 	/*	printf(ex"SEND COMMANDS : %d commands\n",nowBufCount)
 		Dump(buf,16*4)
 		Print
@@ -151,7 +151,7 @@ Public
 		if (ftStatus = FT_OK) And  (bufsize > 0) Then _
 			FT_Read(hFT, buf, bufsize, dwAB)  'Read out the data from FT2232H receive buffer
 
-		printf(ex"[FT232H][flush] %d bytes destroyed.\n",bufsize)
+'		printf(ex"[FT232H][flush] %d bytes destroyed.\n",bufsize)
 		free(buf)
 	End Sub
 
