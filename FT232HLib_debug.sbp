@@ -1,4 +1,5 @@
 'FT232H library for ActiveBasic4 by RGBA_CRT 2017
+#define FT232HLIB_PERFOMANCE_COUNTER
 
 Const FT232HL_BUFSIZE_DEFAULT = 16*1024
 Const USB_BUFFER_SIZE=5504+64*3
@@ -11,6 +12,13 @@ Private
 	nowBufCount As DWord
 	rsvLength As DWord
 
+#ifdef FT232HLIB_PERFOMANCE_COUNTER
+	debugbuf[512] AS Byte
+	lt AS DWord
+	ut AS DWord
+	cc AS DWord
+	usbtime AS DWord
+#endif
 Public
 	hFT As FT_HANDLE
 	spi As *FT232H_SPI
@@ -54,12 +62,18 @@ Public
 		memcpy(buf+nowBufCount,cmd,length)
 		nowBufCount+=length
 
-	'	sendCommands()
+#ifdef FT232HLIB_PERFOMANCE_COUNTER
+		cc++
+#endif
 	End Sub
 
 	Sub addReadRequest(cmd As BytePtr,length As DWord,reciveLength As DWord)
 		addCommand(cmd,length)
 		rsvLength += reciveLength
+
+#ifdef FT232HLIB_PERFOMANCE_COUNTER
+		cc++
+#endif
 	End Sub
 
 	Function getReciveDataSize() As DWord
@@ -69,40 +83,44 @@ Public
 	'length=0 で自動
 	Function reciveData(rsvBuffer As BytePtr,length As DWord) As BOOL
 		'check buffer
-	/*	Dim curBufSize AS DWord
-		Sleep(200)
-		if FT_GetQueueStatus(hFT,ByVal VarPtr(curBufSize))<>FT_OK Then debug
-		if rsvLength<> curBufSize Then	printf(ex"[FT232HLib]Waring: rx buffer length does not mutch! localVar:%d deviceVar:%d\n",rsvLength,curBufSize)
-		length=curBufSize
-*/
 		Dim dwAB As DWord
 		if length = 0 Then length = rsvLength
 		if FT_Read(hFT,rsvBuffer,length,dwAB)=FT_OK Then reciveData=TRUE
 		if dwAB<>length Then reciveData=FALSE
-		rsvLength=0
+		rsvLength=0		
+		
+#ifdef FT232HLIB_PERFOMANCE_COUNTER
+		usbtime=GetTickCount()-ut
+		lt=GetTickCount()
+#endif
 	End Function
 
 	Function sendCommands() As BOOL
-	'	printf(ex"[FT232H] SendCommands %04X/%04X %dKB ::: %d%%  \n",nowBufCount,bufSize,nowBufCount/1024,nowBufCount/bufSize*100)
-	/*	printf(ex"SEND COMMANDS : %d commands\n",nowBufCount)
-		Dump(buf,16*4)
-		Print
-		Print'*/
+#ifdef FT232HLIB_PERFOMANCE_COUNTER
+		'最後の受信から現在時間まで＝コマンド生成時間
+		Dim commandTime AS DWord
+		commandTime=GetTickCount()-lt
+		ut=GetTickCount()
+
+		wsprintf(debugbuf,"FT232H Performance Counter cmd:%04d usb:%04d length:%04d ncmd:%04d",commandTime,usbtime,nowBufCount,cc)
+		SetConsoleTitle(debugbuf)
+		cc=0
+#endif
+
 		dim dwAB As DWord,totalWriteSize AS DWord
 
 *FTSC_WRITE_BUFFER
 		if FT_Write(hFT,buf,nowBufCount,dwAB)<>FT_OK Then debug:ExitFunction
 		totalWriteSize+=dwAB
+
 		if totalWriteSize<nowBufCount Then 
 			printf(ex"[FT232H] traffic overflow!!!!!!!! dwAB%d\n",dwAB)
 			Sleep(100)
 			goto *FTSC_WRITE_BUFFER
 		End If
+
 		nowBufCount=0
 		sendCommands = TRUE
-
-		'debug
-		'FillMemory(buf,16*4,&HAA)
 	End Function
 
 	Function listupDeviceToConsole() AS BOOL
@@ -136,7 +154,6 @@ Public
 		cmd[1]=value As Byte
 		cmd[2]=(value>>8) AS Byte
 		addCommand(cmd,3)
-
 	End Sub
 
 	Sub flush()
@@ -166,7 +183,6 @@ Private
 		Dim ftStatus As Long
 		FT_ResetPort(hFT)
 
-	'	ftStatus = ftStatus or FT_SetFlowControl(hFT, FT_FLOW_DTR_DSR or FT_FLOW_RTS_CTS, 0, 0)
 		ftStatus = ftStatus or FT_SetUSBParameters(hFT, USB_BUFFER_SIZE, USB_BUFFER_SIZE)	'Set USB request transfer size
 		ftStatus = ftStatus or FT_SetChars(hFT, FALSE, 0, FALSE, 0)							'Disable event and error characters
 		ftStatus = ftStatus or FT_SetTimeouts(hFT, 0, 5000)									'Sets the read and write timeouts in milliseconds for the FT2232H
