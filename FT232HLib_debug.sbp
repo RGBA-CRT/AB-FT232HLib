@@ -1,4 +1,12 @@
 'FT232H library for ActiveBasic4 by RGBA_CRT 2017
+
+/*
+ * ActiveBasicのデバッガが落ちる問題
+ *  依存クラスが互いのポインタを持ち合う状態の時、ABのデバッガが
+ *  変数の解析が再帰で無限ループになり、落ちる。
+ *  対策のために随所にプリプロセッサ_DEBUGによる分岐を入れている
+ */
+
 #define FT232HLIB_PERFOMANCE_COUNTER
 
 Const FT232HL_BUFSIZE_DEFAULT = 16*1024
@@ -102,7 +110,7 @@ Public
 		commandTime=GetTickCount()-lt
 		ut=GetTickCount()
 
-		wsprintf(debugbuf,"FT232H Performance Counter cmd:%04d usb:%04d length:%04d ncmd:%04d",commandTime,usbtime,nowBufCount,cc)
+		wsprintf(debugbuf,"FT232H Performance Counter cmd:%04d usb:%04d length:%04d[%d%%] ncmd:%04d",commandTime,usbtime,nowBufCount,(nowBufCount/bufSize*100) AS Long,cc)
 		SetConsoleTitle(debugbuf)
 		cc=0
 #endif
@@ -201,7 +209,11 @@ End Class
 
 Class FT232H_GPIO
 Private
+#ifdef _DEBUG
 	_bord As VoidPtr
+#else
+	bord AS *FT232H
+#endif
 	cmd[3] As Byte	'一々初期化されないように
 Public
 	ADBus As Byte
@@ -210,7 +222,11 @@ Public
 	ACBusDir As Byte
 
 	Sub FT232H_GPIO(ft As *FT232H)
+#ifdef _DEBUG
 		_bord=ft
+#else
+		bord=ft
+#endif
 
 		'初回なので変数と同期する
 		ADBusApply()
@@ -255,14 +271,20 @@ Public
 		cmd[0]=MPSSE_SET_LOBYTE
 		cmd[1]=ADBus
 		cmd[2]=ADBusDir
+
+#ifdef _DEBUG
 		Dim bord AS *FT232H
 		bord=_bord
+#endif
 		bord->addCommand(cmd,3)
 	End Sub
 
 	Sub ADBusReadRequest()
+#ifdef _DEBUG
 		Dim bord AS *FT232H
 		bord=_bord
+#endif
+
 		bord->addReadRequest(ex"\x81",1,1)
 	End Sub
 
@@ -298,14 +320,20 @@ Public
 		cmd[0]=MPSSE_SET_HIBYTE
 		cmd[1]=ACBus
 		cmd[2]=ACBusDir
+#ifdef _DEBUG
 		Dim bord AS *FT232H
 		bord=_bord
+#endif
+
 		bord->addCommand(cmd,3)
 	End Sub
 
 	Sub ACBusReadRequest()
+#ifdef _DEBUG
 		Dim bord AS *FT232H
 		bord=_bord
+#endif
+
 		bord->addReadRequest(ex"\x83",1,1)
 	End Sub
 
@@ -316,8 +344,11 @@ Public
 
 	'ACbus8-9にセット
 	Sub setExtACBus(value As Byte)
+#ifdef _DEBUG
 		Dim bord AS *FT232H
 		bord=_bord
+#endif
+
 		Dim bef AS Byte,setValue AS Byte
 		bef=FT_GetBitMode(bord->hFT,bef)
 		setValue=(&HF0 or (value And &H03)<<2)
@@ -349,7 +380,11 @@ End Enum
 
 Class FT232H_SPI
 Private
+#ifdef _DEBUG
 	_ftdev As VoidPtr
+#else
+	ftdev AS *FT232H
+#endif
 	gpio As *FT232H_GPIO
 
 	readCommand As Byte
@@ -359,7 +394,11 @@ Private
 
 Public
 	Sub FT232H_SPI(ft As *FT232H , GPIO_CLS As *FT232H_GPIO)
+#ifdef _DEBUG
 		_ftdev=ft
+#else
+		ftdev=ft
+#endif
 		gpio=GPIO_CLS
 	End Sub
 	
@@ -371,8 +410,11 @@ Public
 	 * [86]Set TCK Clock [0002]->10MHz
 	 */
 	Sub init(speed_MHz As Double,mode As MPSSE_SERIAL_MODE_EASY,LSBFirstMode As BOOL,enableTriState As BOOL)
+#ifdef _DEBUG
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
+#endif
+
 		'クロックを計算する
 		Dim CLK As Word
 		CLK=(60/(speed_MHz*2)-1) As Word
@@ -383,20 +425,11 @@ Public
 		'printf(ex"[FT232H-SPI][SetSPI Clock] %dMHz = %04X\n",speed_MHz,CLK)
 
 		'setup option
-		'ftdev->addCommand(ex"\x86\x97\x8d\x8A",4)
 		 ftdev->addCommand(ex"\x8A\x97\x8c\x85",4)
 		if enableTriState=TRUE Then ftdev->addCommand(ex"\x9E\x04\x00",3)
 	
 		gpio->setADBusEx(&HFF,&HFB)
 
-
-/*		writeCommand = LSB_POSITIVE_EDGE_BYTES_OUT
-'		writeCommand = LSB_NEGATIVE_EDGE_BYTES_OUT
-		readCommand  = LSB_POSITIVE_EDGE_BYTES_IN
-'		readCommand  = LSB_NEGATIVE_EDGE_BYTES_IN
-'		readWriteCommand = LSB_NEGATIVE_OUT_POSITIVE_INPUT
-'		readWriteCommand = LSB_POSITIVE_OUT_NEGATIVE_INPUT
-		readWriteCommand = MPSSE_WRITE_ENABLE or MPSSE_LSB_FIRST or MPSSE_READ_ENABLE'*/
 		Dim opt As Byte
 		if LSBFirstMode=TRUE Then
 			opt=MPSSE_LSB_FIRST
@@ -415,16 +448,20 @@ Public
 	End Sub
 
 	Sub setIOCommands(read As Byte, write As Byte, IO As Byte)
+#ifdef _DEBUG
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
+#endif
 		if read<>0 Then readCommand = read
 		if write<>0 Then writeCommand = write
 		if IO<>0 Then readWriteCommand = IO 
 	End Sub
 
 	Sub sendData(data As BytePtr,length As DWord)
+#ifdef _DEBUG
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
+#endif
 		if length=0 Then ExitSub
 		length--
 		cmd[0]=writeCommand
@@ -435,8 +472,10 @@ Public
 	End Sub
 
 	Sub sendByte(data As Byte)
+#ifdef _DEBUG
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
+#endif
 		cmd[0]=writeCommand
 		cmd[1]=0
 		cmd[2]=0
@@ -449,8 +488,10 @@ Public
 	End Sub
 
 	Sub reciveRequest(length As DWord)
+#ifdef _DEBUG
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
+#endif
 		if length=0 Then ExitSub
 		length--
 		cmd[0]=readCommand
@@ -460,8 +501,10 @@ Public
 	End Sub
 
 	Sub rwData(writeData As BytePtr,length As DWord)
+#ifdef _DEBUG
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
+#endif
 		if length=0 Then ExitSub
 		length--
 		cmd[0]=readWriteCommand
@@ -472,22 +515,28 @@ Public
 	End Sub
 
 	Function sendByteImmediate(cmd As Byte) As BOOL
+#ifdef _DEBUG
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
+#endif
 		sendData(VarPtr(cmd),1)
 		ft->sendCommands()
 	End Function
 
 	Function sendDataImmediate(cmd As BytePtr,cmdLength As DWord) As BOOL
+#ifdef _DEBUG
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
+#endif
 		sendData(cmd,cmdLength)
 		ft->sendCommands()
 	End Function
 
 	Function reciveRequestImmediate(buf As BytePtr, length As DWord) As BOOL
+#ifdef _DEBUG
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
+#endif
 		reciveRequest(length)
 		ft->sendCommands()
 		ft->reciveData(buf,length)
@@ -513,15 +562,19 @@ Public
 	End Sub
 	
 	Sub init()(_bDebug AS BOOL)
+#ifdef _DEBUG
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
+#endif
 		ftdev->addCommand(ex"\x85\x97\x8c\x86\x03\x00",6)
 		bDebug=_bDebug
 	End Sub
 
 	Sub start(slaveAdr As DWord)
+#ifdef _DEBUG
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
+#endif
 		'CLKをH->Lにしてスタートを表す
 		'                    [ CLK HIGH ][ D0 LOW   ][ CLK LOW  ]
 		ftdev->addCommand(ex"\x80\x03\x03\x80\x01\x03\x80\x00\x03",9)
@@ -529,15 +582,19 @@ Public
 	End Sub
 
 	Sub stop()
+#ifdef _DEBUG
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
+#endif
 		'                    [ CLK HIGH ][ D0 LOW   ]
 		ftdev->addCommand(ex"\x80\x03\x03\x80\x01\x03",3*2)
 	End Sub
 
 	Function read() As Byte
+#ifdef _DEBUG
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
+#endif
 		'Read & SendACK          [     IN DIRECTION     ][       SEND ACK       ][ OUT DIR  ]
 		ftdev->addReadRequest(ex"\x80\x00\x01\x20\x00\x00\x80\x00\x03\x80\x01\x03\x80\x00\x03",15,1)
 
@@ -546,8 +603,10 @@ Public
 	End Function
 
 	Function send(data As Byte) As Long
+#ifdef _DEBUG
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
+#endif
 		'SetData             [ MSB_FALLING_EDGE_CLOCK_BYTE_OUT ]
 		ftdev->addCommand(ex"\x11\x00\x00",3)
 		ftdev->addCommand(VarPtr(data),1)
@@ -564,8 +623,10 @@ Public
 	End Function
 
 	Function writeReg(slaveAdr As DWord,ctrl As Byte,data As Byte) As Long
+#ifdef _DEBUG
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
+#endif
 		writeReg=TRUE
 		ftdev->iic->start((slaveAdr<<1) AS Byte)
 		if ftdev->iic->send(ctrl)<>TRUE Then writeReg=FALSE
@@ -577,16 +638,20 @@ Public
 	End Function
 
 	Function writeRegContinuable(ctrl As Byte,data As Byte) As Long
+#ifdef _DEBUG
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
+#endif
 		writeRegContinuable=TRUE
 		if ftdev->iic->send(ctrl)<>TRUE Then writeRegContinuable=FALSE
 		if ftdev->iic->send(data)<>TRUE Then writeRegContinuable=FALSE
 	End Function
 
 	Function sendBulk(data As BytePtr,len As DWord) As Long
+#ifdef _DEBUG
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
+#endif
 		Dim i As Long
 		sendBulk=TRUE
 		
@@ -596,8 +661,10 @@ Public
 	End Function
 
 	Sub setClock(speed_MHz AS Double)
+#ifdef _DEBUG
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
+#endif
 		'クロックを計算する
 		Dim CLK As Word
 		CLK=(60/(speed_MHz*2)-1) As Word
