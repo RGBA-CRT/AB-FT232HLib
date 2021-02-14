@@ -67,7 +67,7 @@ Public
 		if nowBufCount+length > bufSize Then 
 			debug
 			printf("[FT232HLib][Warning] Buffer overflow!!")
-			sendCommands()
+			sendCommands("[FT232HLib] Bufffer overflow")
 		End If
 		memcpy(buf+nowBufCount,cmd,length)
 		nowBufCount+=length
@@ -117,15 +117,18 @@ Public
 #endif
 	End Function
 
-	Function sendCommands() As BOOL
+	Function sendCommands()(message As BytePtr) As BOOL
 #ifdef FT232HLIB_PERFOMANCE_COUNTER
 		'最後の受信から現在時間まで＝コマンド生成時間
 		Dim commandTime AS DWord
 		commandTime=GetTickCount()-lt
 		ut=GetTickCount()
 
-		wsprintf(debugbuf,"FT232H Performance Counter cmd:%04d usb:%04d length:%04d[%d%%] ncmd:%04d",commandTime,usbtime,nowBufCount,(nowBufCount/bufSize*100) AS Long,cc)
+		if message = NULL then message = ""
+
+		wsprintf(debugbuf,ex"FT232H Performance Counter cmd:%04d usb:%04d length:%04d[%d%%] ncmd:%04d %s\n",commandTime,usbtime,nowBufCount,(nowBufCount/bufSize*100) AS Long,cc,message)
 		SetConsoleTitle(debugbuf)
+		'PrintPtr(debugbuf)
 		cc=0
 #endif
 
@@ -179,7 +182,7 @@ Public
 	End Sub
 
 	Sub flush()
-		sendCommands()
+		sendCommands("[FT232HLib] flush")
 		Sleep(200)
 
 		Dim ftStatus As Long,bufsize As DWord,buf As BytePtr,dwAB As DWord
@@ -543,7 +546,7 @@ Public
 		ftdev=_ftdev
 #endif
 		sendData(VarPtr(cmd),1)
-		ft->sendCommands()
+		ft->sendCommands("[FT232HLib] sendByteImmediate")
 	End Function
 
 	Function sendDataImmediate(cmd As BytePtr,cmdLength As DWord) As BOOL
@@ -552,7 +555,7 @@ Public
 		ftdev=_ftdev
 #endif
 		sendData(cmd,cmdLength)
-		ft->sendCommands()
+		ft->sendCommands("[FT232HLib] sendDataImmediate")
 	End Function
 
 	Function reciveRequestImmediate(buf As BytePtr, length As DWord) As BOOL
@@ -561,7 +564,7 @@ Public
 		ftdev=_ftdev
 #endif
 		reciveRequest(length)
-		ft->sendCommands()
+		ft->sendCommands("[FT232HLib] reciveRequestImmediate")
 		ft->reciveData(buf,length)
 	End Function
 End Class
