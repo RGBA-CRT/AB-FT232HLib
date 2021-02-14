@@ -33,7 +33,7 @@ Public
 	iic As *FT232H_IIC
 	gpio As *FT232H_GPIO
 
-	Sub FT232H()(_bufSize As Long)
+	Sub FT232H()(_bufSize As DWord)
 		bufSize = _bufSize
 		if bufSize = 0 Then bufSize=FT232HL_BUFSIZE_DEFAULT
 		buf=calloc(bufSize)
@@ -45,6 +45,7 @@ Public
 		spi = new FT232H_SPI( test , gpio)
 		iic = new FT232H_IIC( test , gpio)
 
+		nowBufCount = 0
 	End Sub
 
 	Sub ~FT232H()
@@ -64,6 +65,7 @@ Public
 
 	Sub addCommand(cmd As BytePtr,length As DWord)
 		if nowBufCount+length > bufSize Then 
+			debug
 			printf("[FT232HLib][Warning] Buffer overflow!!")
 			sendCommands()
 		End If
@@ -86,6 +88,18 @@ Public
 
 	Function getReciveDataSize() As DWord
 		getReciveDataSize = rsvLength
+	End Function
+
+	Function getBufUsage() As DWord
+		getBufUsage = nowBufCount
+	End Function
+
+	Function getBufSize() As DWord
+		getBufSize = bufSize
+	End Function
+
+	Function getCommandBuf() As BytePtr
+		getCommandBuf = buf
 	End Function
 
 	'length=0 で自動
@@ -414,14 +428,8 @@ Public
 		Dim ftdev As *FT232H
 		ftdev=_ftdev
 #endif
+		setfreq(speed_MHz)
 
-		'クロックを計算する
-		Dim CLK As Word
-		CLK=(60/(speed_MHz*2)-1) As Word
-		cmd[0]=MPSSE_SET_TCK 
-		cmd[1]=(CLK And &HFF) As Byte
-		cmd[2]=((CLK>>8) And &HFF) As Byte
-		ftdev->addCommand(cmd,3)
 		'printf(ex"[FT232H-SPI][SetSPI Clock] %dMHz = %04X\n",speed_MHz,CLK)
 
 		'setup option
@@ -445,6 +453,21 @@ Public
 			readCommand  = MSB_NEGATIVE_EDGE_BYTES_IN or opt
 			readWriteCommand = MSB_NEGATIVE_IO  or opt 'MPSSE_LSB_FIRST or MPSSE_WRITE_ENABLE or READ_ENABLE or MPSSE_NEGATIVE_WRITE or MPSSE_NEGATIVE_READ
 		End If
+	End Sub
+	
+
+	Sub setfreq(speed_MHz As Double)
+#ifdef _DEBUG
+		Dim ftdev As *FT232H
+		ftdev=_ftdev
+#endif
+		'クロックを計算する
+		Dim CLK As Word
+		CLK=(60/(speed_MHz*2)-1) As Word
+		cmd[0]=MPSSE_SET_TCK 
+		cmd[1]=(CLK And &HFF) As Byte
+		cmd[2]=((CLK>>8) And &HFF) As Byte
+		ftdev->addCommand(cmd,3)
 	End Sub
 
 	Sub setIOCommands(read As Byte, write As Byte, IO As Byte)
