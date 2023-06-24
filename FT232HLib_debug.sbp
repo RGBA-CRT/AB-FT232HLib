@@ -201,6 +201,21 @@ Public
 		Dump(buf,nowBufCount)
 		Print
 	End Sub
+
+	Function clockWithNoData(clk_count As Word) As BOOL
+		Dim cmd[3] AS Byte
+		if clk_count > &HFF Then
+			cmd[0]=&H8F
+			cmd[1]=clk_count And &HFF
+			cmd[2]=clk_count >> 8
+			addCommand(cmd, 3)
+		Else
+			cmd[0]=&H8E
+			cmd[1]=clk_count And &HFF
+			addCommand(cmd, 2)
+		End If
+	End Function
+
 Private
 
 	Function SetupFTDI_Device() As Long
@@ -368,7 +383,7 @@ Public
 
 		Dim bef AS Byte,setValue AS Byte
 		bef=FT_GetBitMode(bord->hFT,bef)
-		setValue=(&HF0 or (value And &H03)<<2)
+		setValue=(&HC0 or (value And &H03)<<2)
 		FT_SetBitMode(bord->hFT, setValue , FT_BITMODE_CBUS_BITBANG)
 		FT_SetBitMode(bord->hFT, &H0, FT_BITMODE_MPSSE)				 	'Enable MPSSE mode
 	End Sub
@@ -409,6 +424,10 @@ Private
 	readWriteCommand As Byte
 	cmd[3] As byte
 
+	speed_MHz_ As Double
+	mode_ As MPSSE_SERIAL_MODE_EASY
+	LSBFirstMode_ As BOOL
+	enableTriState_ As BOOL
 Public
 	Sub FT232H_SPI(ft As *FT232H , GPIO_CLS As *FT232H_GPIO)
 #ifdef _DEBUG
@@ -421,7 +440,7 @@ Public
 	
 	/* Setting device by MPSSE command
 	 * [85]LoopBackDisable
-	 * [97]Enable adaptive clocking 
+	 * [97]Disable adaptive clocking 
 	 * [8d]disable 3 Phase Data Clocking -> duty 50%
 	 * [8A]Disables the clk divide by 5 to allow for a 60MHz master clock
 	 * [86]Set TCK Clock [0002]->10MHz
@@ -456,6 +475,15 @@ Public
 			readCommand  = MSB_NEGATIVE_EDGE_BYTES_IN or opt
 			readWriteCommand = MSB_NEGATIVE_IO  or opt 'MPSSE_LSB_FIRST or MPSSE_WRITE_ENABLE or READ_ENABLE or MPSSE_NEGATIVE_WRITE or MPSSE_NEGATIVE_READ
 		End If
+		
+		speed_MHz_ =speed_MHz
+		mode_ = mode
+		LSBFirstMode_ = LSBFirstMode
+		enableTriState_ = enableTriState
+	End Sub
+
+	Sub reload()
+		init(speed_MHz_,mode_,LSBFirstMode_,enableTriState_)
 	End Sub
 	
 
